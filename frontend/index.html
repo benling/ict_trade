@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MES ICT 回测可视化 v2</title>
+<script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+:root {
+  --bg: #0d1117; --surface: #161b22; --surface2: #21262d;
+  --border: #30363d; --text: #e6edf3; --text-dim: #8b949e;
+  --green: #22c55e; --green-bg: rgba(34,197,94,0.12);
+  --red: #ef4444; --red-bg: rgba(239,68,68,0.12);
+  --blue: #3b82f6; --amber: #f59e0b; --purple: #a855f7;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','SF Mono',monospace;
+  background:var(--bg);color:var(--text);overflow:hidden;height:100vh;
+}
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:var(--surface)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.header{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:8px 16px;display:flex;align-items:center;gap:12px;height:44px;
+}
+.header h1{font-size:14px;font-weight:600;}
+.header .badge{padding:2px 8px;border-radius:4px;font-size:10px;}
+.header-right{margin-left:auto;display:flex;gap:12px;align-items:center;}
+.container{
+  display:grid;grid-template-columns:1fr 320px;gap:0;
+  height:calc(100vh - 44px);
+}
+.left-col{display:flex;flex-direction:column;overflow:hidden;}
+.right-col{display:flex;flex-direction:column;gap:8px;overflow-y:auto;padding:8px;background:var(--surface);border-left:1px solid var(--border);}
+.chart-panel{flex:1;display:flex;flex-direction:column;min-height:0;}
+#chart{flex:1;min-height:0;}
+.chart-toolbar{
+  display:flex;gap:6px;padding:6px 12px;
+  border-bottom:1px solid var(--border);align-items:center;flex-wrap:wrap;
+}
+.chart-toolbar label{font-size:11px;color:var(--text-dim);white-space:nowrap;}
+.chart-toolbar select,.chart-toolbar input{
+  background:var(--surface2);border:1px solid var(--border);
+  color:var(--text);padding:2px 6px;border-radius:4px;font-size:11px;
+}
+.chart-toolbar select:focus{outline:none;border-color:var(--blue);}
+.btn-tool{
+  background:var(--surface2);border:1px solid var(--border);
+  color:var(--text);padding:2px 8px;border-radius:4px;cursor:pointer;font-size:11px;
+}
+.btn-tool:hover{background:var(--border);}
+.btn-tool.active{background:var(--blue);border-color:var(--blue);color:#fff;}
+.card{
+  background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;
+}
+.card-title{font-size:10px;font-weight:600;margin-bottom:8px;color:var(--text-dim);text-transform:uppercase;}
+.param-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px;}
+.param-item label{font-size:9px;color:var(--text-dim);display:block;}
+.param-item input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:2px 4px;border-radius:4px;font-size:10px;}
+.btn{
+  background:var(--blue);border:none;color:white;padding:5px 12px;border-radius:6px;
+  cursor:pointer;font-size:11px;font-weight:500;width:100%;transition:opacity 0.2s;
+}
+.btn:hover{opacity:0.85;}
+.btn-green{background:var(--green);}
+.bt-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin:6px 0;}
+.bt-stat{text-align:center;}
+.bt-stat .val{font-size:16px;font-weight:700;}
+.bt-stat .lbl{font-size:8px;color:var(--text-dim);}
+.trade-log{max-height:160px;overflow-y:auto;font-size:10px;}
+.trade-row{
+  display:grid;grid-template-columns:50px 44px 50px 50px 30px 1fr;
+  padding:2px 0;border-bottom:1px solid var(--border);gap:2px;font-size:10px;
+}
+.trade-row .pnl-pos{color:var(--green);}
+.trade-row .pnl-neg{color:var(--red);}
+.trade-row:hover{background:rgba(59,130,246,0.08);}
+.data-info{font-size:10px;color:var(--text-dim);padding:2px 12px;}
+.loading-overlay{
+  position:fixed;top:0;left:0;width:100%;height:100%;
+  background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;
+  z-index:999;font-size:14px;color:var(--text);
+}
+.loading-overlay.hidden{display:none;}
+#statsBar{font-size:11px;padding:4px 0;}
+.tabs{display:flex;gap:4px;margin-bottom:6px;}
+.tab{
+  padding:4px 10px;border-radius:4px;cursor:pointer;
+  font-size:10px;background:transparent;border:none;color:var(--text-dim);
+}
+.tab.active{background:var(--surface2);color:var(--text);font-weight:500;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ MES ICT 回测可视化</h1>
+  <span class="badge" id="dataInfo" style="color:var(--text-dim)">加载中...</span>
+  <div class="header-right">
+    <button class="btn-tool" onclick="resetView()">⟲ 重置视图</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="left-col">
+    <div class="chart-panel">
+      <div class="chart-toolbar">
+        <label>数据集</label>
+        <select id="datasetSelect" onchange="onDatasetChange()"></select>
+        <label style="margin-left:8px">年</label>
+        <select id="yearSelect" onchange="onYearChange()"><option value="">全部</option></select>
+        <label>月</label>
+        <select id="monthSelect" onchange="onMonthChange()"><option value="">全部</option></select>
+        <label>日</label>
+        <select id="daySelect" onchange="onDayChange()"><option value="">全部</option></select>
+        <label style="margin-left:8px">起始</label>
+        <input type="date" id="startDate">
+        <label>结束</label>
+        <input type="date" id="endDate">
+        <div style="margin-left:auto;display:flex;gap:4px;">
+          <button class="btn-tool active" data-ema="9" onclick="toggleEMA(this)">EMA9</button>
+          <button class="btn-tool active" data-ema="20" onclick="toggleEMA(this)">EMA20</button>
+          <button class="btn-tool active" data-ema="50" onclick="toggleEMA(this)">EMA50</button>
+          <button class="btn-tool active" data-ema="200" onclick="toggleEMA(this)">EMA200</button>
+          <button class="btn-tool active" data-indicator="vwap" onclick="toggleIndicator(this)">VWAP</button>
+        </div>
+      </div>
+      <div id="chart"></div>
+      <div class="data-info" id="barInfo"></div>
+    </div>
+  </div>
+
+  <div class="right-col">
+    <div class="card">
+      <div class="tabs">
+        <button class="tab active" data-tab="params" onclick="switchTab('params')">⚙️ 参数</button>
+        <button class="tab" data-tab="results" onclick="switchTab('results')">📊 结果</button>
+      </div>
+      <div id="tabParams">
+        <div class="param-grid">
+          <div class="param-item"><label>资金($)</label><input type="number" id="btCapital" value="2000" step="100"></div>
+          <div class="param-item"><label>风险/笔(%)</label><input type="number" id="btRisk" value="1" step="0.5" min="0.5" max="5"></div>
+          <div class="param-item"><label>FVG最小Gap</label><input type="number" id="btMinGap" value="0.5" step="0.25"></div>
+          <div class="param-item"><label>FVG最大Gap</label><input type="number" id="btMaxGap" value="5" step="0.5"></div>
+          <div class="param-item"><label>止损(×ATR)</label><input type="number" id="btSl" value="1.5" step="0.3"></div>
+          <div class="param-item"><label>止盈(R:R)</label><input type="number" id="btTp" value="2" step="0.5"></div>
+          <div class="param-item"><label>最小止损</label><input type="number" id="btMinSl" value="3" step="0.5"></div>
+          <div class="param-item"><label>最大止损</label><input type="number" id="btMaxSl" value="15" step="1"></div>
+          <div class="param-item"><label>最大持仓</label><input type="number" id="btMaxPos" value="5" step="1"></div>
+        </div>
+        <label style="font-size:10px;color:var(--text-dim);display:flex;align-items:center;gap:4px;margin-bottom:6px;">
+          <input type="checkbox" id="btKillzone" checked> 仅猎杀区
+        </label>
+        <button class="btn btn-green" onclick="runBacktest()" id="runBtn">▶ 运行回测</button>
+      </div>
+      <div id="tabResults" style="display:none;">
+        <div id="statsBar"></div>
+        <div class="bt-grid" id="btStats"></div>
+        <div class="trade-log" id="btTradeLog"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:auto;">
+      <div class="card-title">📋 交易日志</div>
+      <div class="trade-log" id="tradeLog" style="max-height:none;">
+        <div style="color:var(--text-dim);font-size:11px;text-align:center;padding:12px;">运行回测后显示</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="loading-overlay hidden" id="loadingOverlay">
+  <span>⏳ 加载中...</span>
+</div>
+
+<script>
+// =============================================================
+// 全局状态
+// =============================================================
+let chart = null;
+let candleSeries = null;
+let volumeSeries = null;
+let vwapLine = null;
+let vwapUpper = null;
+let vwapLower = null;
+let emaSeries = {};
+let chartData = [];
+let barData = [];
+let currentTrades = [];
+let indicatorCache = {};
+let emaEnabled = {9:true, 20:true, 50:true, 200:true};
+let vwapEnabled = true;
+let filterState = {dataset:'3M', year:'', month:'', day:'', startDate:'', endDate:''};
+let btResult = null;
+
+// =============================================================
+// 工具函数
+// =============================================================
+function showLoading(on) {
+  document.getElementById('loadingOverlay').classList.toggle('hidden', !on);
+}
+
+function timeToUnix(t) {
+  if (!t) return 0;
+  let s = String(t);
+  if (s.includes('T')) return Math.floor(new Date(s).getTime() / 1000);
+  s = s.replace(/[-:]/g, '');
+  let m = s.match(/(\d{4})(\d{2})(\d{2})\s*(\d{2}):?(\d{2})?:?(\d{2})?/);
+  if (m) return Math.floor(new Date(m[1],m[2]-1,m[3],m[4]||0,m[5]||0,m[6]||0).getTime()/1000);
+  return Math.floor(new Date(s).getTime()/1000) || 0;
+}
+
+// =============================================================
+// 初始化图表
+// =============================================================
+function initChart() {
+  const container = document.getElementById('chart');
+  container.innerHTML = '';
+  try {
+    chart = LightweightCharts.createChart(container, {
+      layout: {background:{type:'solid',color:'#0d1117'},textColor:'#8b949e',fontFamily:'monospace'},
+      grid:{vertLines:{color:'#1a2332'},horzLines:{color:'#1a2332'}},
+      crosshair:{mode:LightweightCharts.CrosshairMode.Normal},
+      rightPriceScale:{borderColor:'#30363d'},
+      timeScale:{borderColor:'#30363d',timeVisible:true,secondsVisible:false},
+      handleScroll:{vertTouchDrag:false},
+    });
+    candleSeries = chart.addCandlestickSeries({
+      upColor:'#22c55e',downColor:'#ef4444',borderDownColor:'#ef4444',
+      borderUpColor:'#22c55e',wickDownColor:'#ef4444',wickUpColor:'#22c55e',
+    });
+    volumeSeries = chart.addHistogramSeries({
+      priceFormat:{type:'volume'},priceScaleId:'volume',
+    });
+    chart.priceScale('volume').applyOptions({
+      scaleMargins:{top:0.85,bottom:0},
+    });
+  } catch(e) {
+    console.error('initChart error:', e);
+  }
+}
+
+// =============================================================
+// 数据加载
+// =============================================================
+async function loadFilterInfo() {
+  try {
+    const r = await fetch(`/api/filter-info?dataset=${filterState.dataset}`);
+    const data = await r.json();
+    const yearSel = document.getElementById('yearSelect');
+    const monthSel = document.getElementById('monthSelect');
+    const daySel = document.getElementById('daySelect');
+    yearSel.innerHTML = '<option value="">全部</option>';
+    monthSel.innerHTML = '<option value="">全部</option>';
+    daySel.innerHTML = '<option value="">全部</option>';
+    (data.years||[]).forEach(y => { yearSel.innerHTML += `<option value="${y}">${y}</option>`; });
+    if (filterState.year && data.months) {
+      data.months.forEach(m => { monthSel.innerHTML += `<option value="${m}">${m}</option>`; });
+    }
+    if (filterState.month && filterState.year && data.days) {
+      data.days.forEach(d => { daySel.innerHTML += `<option value="${d}">${d}</option>`; });
+    }
+  } catch(e) { console.error('loadFilterInfo error:', e); }
+}
+
+async function loadData() {
+  showLoading(true);
+  try {
+    let mode = 'all';
+    let url = `/api/bars?dataset=${filterState.dataset}&mode=${mode}`;
+    if (filterState.year && filterState.month && filterState.day) {
+      url = `/api/bars?dataset=${filterState.dataset}&mode=day&date=${filterState.day}`;
+    } else if (filterState.year && filterState.month) {
+      url = `/api/bars?dataset=${filterState.dataset}&mode=year-month&year=${filterState.year}&month=${filterState.month}`;
+    } else {
+      const sd = document.getElementById('startDate').value;
+      const ed = document.getElementById('endDate').value;
+      filterState.startDate = sd; filterState.endDate = ed;
+      if (sd||ed) url += `&start_date=${sd}&end_date=${ed}`;
+    }
+    const r = await fetch(url);
+    const data = await r.json();
+    chartData = data.bars || [];
+
+    if (candleSeries) {
+      candleSeries.setData(chartData);
+    }
+    if (volumeSeries) {
+      volumeSeries.setData(chartData.map(b => ({
+        time: b.time, value: b.volume || 0,
+        color: b.close >= b.open ? '#22c55e30' : '#ef444430'
+      })));
+    }
+    chart.timeScale().fitContent();
+    barData = chartData;
+    document.getElementById('barInfo').textContent =
+      `${data.total}根K线 | ${data.start||'?'} ~ ${data.end||'?'} | 显示${data.returned}根`;
+
+    // 加载指标
+    await loadIndicators();
+  } catch(e) { console.error('Load data error:', e); }
+  finally { showLoading(false); }
+}
+
+async function loadIndicators() {
+  try {
+    let url = `/api/indicators?dataset=${filterState.dataset}&vwap=true&ema=9,20,50,200`;
+    const sd = filterState.startDate || document.getElementById('startDate').value;
+    const ed = filterState.endDate || document.getElementById('endDate').value;
+    if (filterState.year && filterState.month && filterState.day) {
+      url = `/api/indicators?dataset=${filterState.dataset}&vwap=true&ema=9,20,50,200&mode=day&date=${filterState.day}`;
+    } else if (filterState.year && filterState.month) {
+      url = `/api/indicators?dataset=${filterState.dataset}&vwap=true&ema=9,20,50,200&mode=year-month&year=${filterState.year}&month=${filterState.month}`;
+    } else if (sd||ed) {
+      url += `&start_date=${sd}&end_date=${ed}`;
+    }
+    const r = await fetch(url);
+    indicatorCache = await r.json();
+    refreshIndicators();
+  } catch(e) { console.error('Load indicators error:', e); }
+}
+
+function refreshIndicators() {
+  // 移除旧的指标线
+  if (vwapLine) { chart.removeSeries(vwapLine); vwapLine = null; }
+  if (vwapUpper) { chart.removeSeries(vwapUpper); vwapUpper = null; }
+  if (vwapLower) { chart.removeSeries(vwapLower); vwapLower = null; }
+  Object.values(emaSeries).forEach(s => { if(s) chart.removeSeries(s); });
+  emaSeries = {};
+
+  // 添加VWAP
+  if (vwapEnabled && indicatorCache.vwap && indicatorCache.vwap.vwap) {
+    const lines = indicatorCache.vwap;
+    const opts = {color:'#f59e0b',lineWidth:1,lastValueVisible:false,priceLineVisible:false};
+    vwapLine = chart.addLineSeries({...opts,title:'VWAP'});
+    vwapLine.setData(lines.vwap);
+    if (lines.upper) { vwapUpper = chart.addLineSeries({...opts,color:'#f59e0b40',lineWidth:1}); vwapUpper.setData(lines.upper); }
+    if (lines.lower) { vwapLower = chart.addLineSeries({...opts,color:'#f59e0b40',lineWidth:1}); vwapLower.setData(lines.lower); }
+  }
+
+  // 添加EMA
+  const emaColors = {9:'#a855f7',20:'#3b82f6',50:'#22c55e',200:'#ef4444'};
+  if (indicatorCache.emas) {
+    Object.entries(indicatorCache.emas).forEach(([k,vals]) => {
+      const period = parseInt(k.replace('ema_',''));
+      if (!emaEnabled[period] || !vals) return;
+      const s = chart.addLineSeries({
+        color:emaColors[period]||'#888',lineWidth:1,
+        lastValueVisible:false,priceLineVisible:false,title:k.toUpperCase()
+      });
+      s.setData(vals);
+      emaSeries[period] = s;
+    });
+  }
+}
+
+// =============================================================
+// 筛选切换
+// =============================================================
+async function onDatasetChange() {
+  filterState.dataset = document.getElementById('datasetSelect').value;
+  filterState.year = ''; filterState.month = ''; filterState.day = '';
+  await loadFilterInfo();
+  await loadData();
+}
+
+async function onYearChange() {
+  filterState.year = document.getElementById('yearSelect').value;
+  filterState.month = ''; filterState.day = '';
+  await loadFilterInfo();
+  await loadData();
+}
+
+async function onMonthChange() {
+  filterState.month = document.getElementById('monthSelect').value;
+  filterState.day = '';
+  await loadFilterInfo();
+  await loadData();
+}
+
+async function onDayChange() {
+  filterState.day = document.getElementById('daySelect').value;
+  await loadData();
+}
+
+function toggleEMA(btn) {
+  const p = parseInt(btn.dataset.ema);
+  emaEnabled[p] = !emaEnabled[p];
+  btn.classList.toggle('active');
+  refreshIndicators();
+}
+
+function toggleIndicator(btn) {
+  if (btn.dataset.indicator === 'vwap') {
+    vwapEnabled = !vwapEnabled;
+    btn.classList.toggle('active');
+    refreshIndicators();
+  }
+}
+
+function resetView() {
+  if (chart) chart.timeScale().fitContent();
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab===name));
+  document.getElementById('tabParams').style.display = name==='params' ? 'block' : 'none';
+  document.getElementById('tabResults').style.display = name==='results' ? 'block' : 'none';
+}
+
+// =============================================================
+// 回测
+// =============================================================
+function getBacktestParams() {
+  const minSl = parseFloat(document.getElementById('btMinSl').value) || 3;
+  const maxSl = parseFloat(document.getElementById('btMaxSl').value) || 15;
+  return {
+    dataset: filterState.dataset,
+    capital: parseFloat(document.getElementById('btCapital').value) || 2000,
+    risk_pct: parseFloat(document.getElementById('btRisk').value) || 1,
+    min_fvg_gap: parseFloat(document.getElementById('btMinGap').value) || 0.5,
+    max_fvg_gap: parseFloat(document.getElementById('btMaxGap').value) || 5,
+    sl_atr_mult: parseFloat(document.getElementById('btSl').value) || 1.5,
+    tp_rr: parseFloat(document.getElementById('btTp').value) || 2,
+    min_sl: minSl,
+    max_sl: maxSl,
+    max_position: parseInt(document.getElementById('btMaxPos').value) || 5,
+    only_killzone: document.getElementById('btKillzone').checked,
+    trend_filter: 'none',
+    start_date: filterState.startDate || document.getElementById('startDate').value || '',
+    end_date: filterState.endDate || document.getElementById('endDate').value || '',
+  };
+}
+
+async function runBacktest() {
+  showLoading(true);
+  try {
+    const params = getBacktestParams();
+    const qs = new URLSearchParams(params).toString();
+    const r = await fetch(`/api/backtest?${qs}`);
+    const result = await r.json();
+    btResult = result;
+    currentTrades = result.trades || [];
+    displayResults(result);
+    switchTab('results');
+  } catch(e) {
+    console.error('Backtest error:', e);
+    document.getElementById('statsBar').innerHTML = '<span style="color:var(--red)">回测失败: ' + e.message + '</span>';
+  } finally {
+    showLoading(false);
+  }
+}
+
+function displayResults(result) {
+  const trades = result.trades || [];
+  const total = result.total_trades || trades.length;
+  const wins = result.wins || trades.filter(t=>t.pnl>0).length;
+  const losses = result.losses || trades.filter(t=>t.pnl<0).length;
+  const winRate = total ? (wins/total*100).toFixed(1) : '0';
+  const totalPnl = result.total_pnl || result.pnl || 0;
+  const maxDD = result.max_drawdown || 0;
+  const profitFactor = result.profit_factor || (result.loss_pnl ? Math.abs(result.win_pnl/(result.loss_pnl||1)) : 0);
+
+  const statsBar = document.getElementById('statsBar');
+  statsBar.innerHTML = `总交易 <b>${total}</b> 笔 | 盈利 <b style="color:var(--green)">${wins}</b> / 亏损 <b style="color:var(--red)">${losses}</b> | 胜率 <b>${winRate}%</b>`;
+
+  document.getElementById('btStats').innerHTML = `
+    <div class="bt-stat"><div class="val" style="color:${totalPnl>=0?'var(--green)':'var(--red)'}">${totalPnl>=0?'+':''}${totalPnl.toFixed(2)}</div><div class="lbl">总盈亏</div></div>
+    <div class="bt-stat"><div class="val">${profitFactor.toFixed(2)}</div><div class="lbl">盈亏比</div></div>
+    <div class="bt-stat"><div class="val" style="color:var(--red)">${maxDD.toFixed(2)}</div><div class="lbl">最大回撤</div></div>
+  `;
+
+  const log = document.getElementById('btTradeLog');
+  const log2 = document.getElementById('tradeLog');
+  if (trades.length === 0) {
+    log.innerHTML = '<div style="color:var(--text-dim);padding:8px;">没有交易记录</div>';
+    log2.innerHTML = '<div style="color:var(--text-dim);padding:8px;">没有交易记录</div>';
+    return;
+  }
+  const rows = trades.slice(0,100).map(t => {
+    const pnl = t.pnl || 0;
+    return `<div class="trade-row">
+      <span>${t.side||'?'}</span>
+      <span>${t.entry?.toFixed(1)||'-'}</span>
+      <span>${t.exit?.toFixed(1)||'-'}</span>
+      <span class="${pnl>=0?'pnl-pos':'pnl-neg'}">${pnl>=0?'+':''}$${pnl.toFixed(2)}</span>
+      <span>${(t.bars||0)}</span>
+      <span>${t.reason||''}</span>
+    </div>`;
+  }).join('');
+  log.innerHTML = `<div class="trade-row" style="color:var(--text-dim);font-weight:600;">
+    <span>方向</span><span>入场</span><span>出场</span><span>盈亏</span><span>K线</span><span>原因</span>
+  </div>` + rows;
+  log2.innerHTML = log.innerHTML;
+}
+
+// =============================================================
+// 初始化
+// =============================================================
+async function init() {
+  initChart();
+  try {
+    // 加载数据集列表
+    const r = await fetch('/api/datasets');
+    const data = await r.json();
+    const sel = document.getElementById('datasetSelect');
+    (data.datasets||[]).forEach(d => {
+      sel.innerHTML += `<option value="${d.name}">${d.name} (${d.bars}根K线)</option>`;
+    });
+    // 加载筛选信息
+    await loadFilterInfo();
+    // 加载数据
+    await loadData();
+  } catch(e) { console.error('Init error:', e); }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
